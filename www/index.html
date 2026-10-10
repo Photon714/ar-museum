@@ -1,0 +1,108 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>AR Museum</title>
+  <script src="lib/aframe.min.js"></script>
+  <script src="lib/aframe-ar.js"></script>
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #000; font-family: system-ui, sans-serif; }
+    #hint {
+      position: fixed; left: 0; right: 0; top: 12px; text-align: center; z-index: 10;
+      color: #fff; font-size: 15px; text-shadow: 0 1px 4px #000; pointer-events: none;
+      transition: opacity .4s;
+    }
+    #card {
+      position: fixed; left: 12px; right: 12px; bottom: 16px; z-index: 10; padding: 14px 16px;
+      background: rgba(30, 20, 12, .82); color: #f4e9cf; border: 1px solid #c8964a; border-radius: 12px;
+      opacity: 0; transform: translateY(20px); transition: opacity .4s, transform .4s; pointer-events: none;
+    }
+    #card.show { opacity: 1; transform: none; }
+    #card h1 { margin: 0 0 4px; font-size: 18px; color: #e8b866; }
+    #card p { margin: 0; font-size: 14px; line-height: 1.35; }
+    #card .tag { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: #c8964a; margin-bottom: 2px; }
+  </style>
+</head>
+<body>
+  <div id="hint">Point the camera at the marker</div>
+  <div id="card">
+    <div class="tag">Historical context</div>
+    <h1>Greek Amphora, c. 400 BC</h1>
+    <p>Two-handled clay jar used across the ancient Mediterranean to store and ship wine, olive oil and grain. Shipwreck finds of amphorae help archaeologists trace old trade routes.</p>
+  </div>
+
+  <a-scene embedded vr-mode-ui="enabled: false"
+           arjs="sourceType: webcam; debugUIEnabled: false; detectionMode: mono; cameraParametersUrl: data/camera_para.dat; maxDetectionRate: 60; canvasWidth: 640; canvasHeight: 480;"
+           renderer="logarithmicDepthBuffer: true; colorManagement: true;">
+
+    <a-assets>
+      <a-asset-item id="amphora" src="data/amphora.obj"></a-asset-item>
+    </a-assets>
+
+    <!-- Image target. Everything inside is a child of the marker, so it follows it. -->
+    <a-marker id="target" type="pattern" url="data/patt.hiro" smooth="true" smoothCount="8" smoothTolerance="0.01" smoothThreshold="5">
+
+      <!-- lighting -->
+      <a-entity light="type: ambient; color: #fff4e0; intensity: 1.1"></a-entity>
+      <a-entity light="type: directional; color: #ffffff; intensity: 2.2" position="1 3 2"></a-entity>
+      <a-entity light="type: point; color: #ffcf87; intensity: 1.2; distance: 6" position="0 1.6 0"></a-entity>
+
+      <!-- display plinth -->
+      <a-cylinder position="0 0.04 0" radius="0.55" height="0.08" color="#3b2c20" metalness="0.2" roughness="0.8"></a-cylinder>
+
+      <!-- the artifact -->
+      <a-entity id="vase" obj-model="obj: #amphora" position="0 0.08 0" scale="0.42 0.42 0.42"
+                material="color: #b5703f; roughness: 0.65; metalness: 0.05">
+        <a-animation attribute="rotation" dur="14000" to="0 360 0" easing="linear" repeat="indefinite"></a-animation>
+      </a-entity>
+
+      <!-- floating label (drawn on a canvas, no font download needed) -->
+      <a-plane label="Greek Amphora|c. 400 BC" position="0 1.0 0.85" rotation="-55 0 0" width="1.6" height="0.7" material="transparent: true; side: double; shader: flat"></a-plane>
+    </a-marker>
+
+    <a-entity camera></a-entity>
+  </a-scene>
+
+  <script>
+    // canvas-drawn label so the app works fully offline
+    AFRAME.registerComponent('label', {
+      schema: { type: 'string' },
+      init: function () {
+        var parts = this.data.split('|');
+        var c = document.createElement('canvas'); c.width = 512; c.height = 224;
+        var g = c.getContext('2d');
+        g.fillStyle = 'rgba(30,20,12,0.85)'; g.fillRect(0, 0, 512, 224);
+        g.strokeStyle = '#c8964a'; g.lineWidth = 6; g.strokeRect(4, 4, 504, 216);
+        g.textAlign = 'center'; g.fillStyle = '#ffe2a8'; g.font = 'bold 54px sans-serif';
+        g.fillText(parts[0], 256, 100);
+        g.fillStyle = '#e8b866'; g.font = '40px sans-serif'; g.fillText(parts[1] || '', 256, 165);
+        var tex = new THREE.CanvasTexture(c);
+        var mesh = this.el.getObject3D('mesh');
+        var apply = function (m) { m.material.map = tex; m.material.needsUpdate = true; };
+        if (mesh) apply(mesh); else this.el.addEventListener('object3dset', function () { apply(this.getObject3D('mesh')); }.bind(this), { once: true });
+      }
+    });
+    // slow turntable (A-Frame 1.3 dropped <a-animation>, so rotate in a component)
+    AFRAME.registerComponent('spin', {
+      tick: function (t, dt) { this.el.object3D.rotation.y += dt * 0.00045; }
+    });
+    document.getElementById('vase').setAttribute('spin', '');
+    // remove the legacy animation tag if the build ignores it
+    var legacy = document.querySelector('#vase a-animation'); if (legacy) legacy.remove();
+
+    // make sure the OBJ is shaded smoothly and double sided
+    document.getElementById('vase').addEventListener('model-loaded', function (e) {
+      e.detail.model.traverse(function (n) {
+        if (n.isMesh) { n.material.side = 2; n.material.needsUpdate = true; }
+      });
+    });
+
+    // info card + hint follow marker visibility
+    var card = document.getElementById('card'), hint = document.getElementById('hint');
+    var marker = document.getElementById('target');
+    marker.addEventListener('markerFound', function () { card.classList.add('show'); hint.style.opacity = 0; });
+    marker.addEventListener('markerLost',  function () { card.classList.remove('show'); hint.style.opacity = 1; });
+  </script>
+</body>
+</html>
