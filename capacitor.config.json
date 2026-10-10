@@ -1,0 +1,7 @@
+{
+  "appId": "com.photon.armuseum",
+  "appName": "AR Museum",
+  "webDir": "www",
+  "server": { "androidScheme": "https" },
+  "android": { "allowMixedContent": false }
+}
